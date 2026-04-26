@@ -192,6 +192,63 @@ class BatchContract extends Contract {
 
         return data.toString();
     }
+
+    async GetFullBatchDetails(ctx, batchId) {
+
+        // =========================
+        // 1. GET BATCH DATA
+        // =========================
+        const batchData = await ctx.stub.getState(batchId);
+
+        if (!batchData || batchData.length === 0) {
+            throw new Error("Batch not found");
+        }
+
+        const batch = JSON.parse(batchData.toString());
+
+        // =========================
+        // 2. FIND TRANSPORT DATA
+        // =========================
+        const iterator = await ctx.stub.getStateByRange('', '');
+
+        let transportDetails = [];
+
+        while (true) {
+            const res = await iterator.next();
+
+            if (res.value && res.value.value.toString()) {
+
+                const record = JSON.parse(res.value.value.toString());
+
+                // Check if it's a transport object
+                if (record.transportId && record.batchIds) {
+
+                    if (record.batchIds.includes(batchId)) {
+                        transportDetails.push(record);
+                    }
+                }
+            }
+
+            if (res.done) {
+                await iterator.close();
+                break;
+            }
+        }
+
+        // =========================
+        // 3. FINAL COMBINED OUTPUT
+        // =========================
+        const result = {
+            batchId: batchId,
+            collection: batch.collection,
+            drying: batch.drying,
+            mixing: batch.mixing,
+            product: batch.product,
+            transport: transportDetails
+        };
+
+        return JSON.stringify(result);
+    }
 }
 
 module.exports.contracts = [BatchContract];
