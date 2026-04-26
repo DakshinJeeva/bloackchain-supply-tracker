@@ -18,7 +18,9 @@ cd $FABRIC_PATH
 ./network.sh deployCC \
   -ccn $CC_NAME \
   -ccp $CC_SRC_PATH \
-  -ccl javascript
+  -ccl javascript \
+  -ccv $CC_VERSION \
+  -ccs $CC_SEQUENCE
 
 echo "➕ Installing on Org3..."
 
