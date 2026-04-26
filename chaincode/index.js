@@ -108,6 +108,90 @@ class BatchContract extends Contract {
 
         return data.toString();
     }
+
+    async CreateTransport(ctx, transportId, batchIdsJSON, startTime, location) {
+
+        const exists = await ctx.stub.getState(transportId);
+        if (exists && exists.length > 0) {
+            throw new Error("Transport already exists");
+        }
+
+        const batchIds = JSON.parse(batchIdsJSON);
+
+        const transport = {
+            transportId,
+            batchIds,
+            startTime,
+            startLocation: location,
+            status: "IN_TRANSIT",
+            trackingLogs: []
+        };
+
+        await ctx.stub.putState(transportId, Buffer.from(JSON.stringify(transport)));
+        return JSON.stringify(transport);
+
+    }
+
+    async TrackCargo(ctx, transportId, temperature, speed, location, batchIdsJSON) {
+
+        const data = await ctx.stub.getState(transportId);
+        if (!data || data.length === 0) {
+            throw new Error("Transport not found");
+        }
+
+        const transport = JSON.parse(data.toString());
+
+        const batchIds = JSON.parse(batchIdsJSON);
+
+        const txTime = ctx.stub.getTxTimestamp();
+        const seconds = txTime.seconds.low;
+        const nanos = txTime.nanos;
+
+        const timestamp = new Date(seconds * 1000 + nanos / 1000000).toISOString();
+
+        const log = {
+            timestamp,
+            temperature,
+            speed,
+            location,
+            batchIds
+        };
+
+        transport.trackingLogs.push(log);
+
+        await ctx.stub.putState(transportId, Buffer.from(JSON.stringify(transport)));
+
+        return JSON.stringify(log);
+    }
+
+    async CompleteTransport(ctx, transportId, endLocation) {
+
+        const data = await ctx.stub.getState(transportId);
+        if (!data || data.length === 0) {
+            throw new Error("Transport not found");
+        }
+
+        const transport = JSON.parse(data.toString());
+
+        transport.status = "DELIVERED";
+        transport.endLocation = endLocation;
+        transport.endTime = new Date().toISOString();
+
+        await ctx.stub.putState(transportId, Buffer.from(JSON.stringify(transport)));
+
+        return JSON.stringify(transport);
+    }
+
+    async ReadTransport(ctx, transportId) {
+
+        const data = await ctx.stub.getState(transportId);
+
+        if (!data || data.length === 0) {
+            throw new Error("Transport not found");
+        }
+
+        return data.toString();
+    }
 }
 
 module.exports.contracts = [BatchContract];
