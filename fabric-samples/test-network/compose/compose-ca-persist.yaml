@@ -1,0 +1,36 @@
+# CA Persistent Volume Override
+# This file extends compose-ca.yaml to add named Docker volumes for each CA,
+# so the CA keypair (private key, cert, db) survives network restarts.
+#
+# Usage: docker compose -f compose/compose-ca.yaml -f compose/compose-ca-persist.yaml up -d
+# (handled automatically by start.sh)
+#
+# Named volumes are NOT removed by `docker compose down` (only by `docker compose down --volumes`).
+# network.sh down uses `down --volumes`, so we rely on bind-mount backup/restore instead.
+# See start.sh for the full orchestration.
+
+networks:
+  test:
+    name: fabric_test
+
+# Named Docker volumes — survive docker compose down (without --volumes flag)
+volumes:
+  ca_org1_data:
+    name: fabric_ca_org1_data
+  ca_org2_data:
+    name: fabric_ca_org2_data
+  ca_orderer_data:
+    name: fabric_ca_orderer_data
+
+services:
+  ca_org1:
+    volumes:
+      - ca_org1_data:/etc/hyperledger/fabric-ca-server/msp/keystore
+
+  ca_org2:
+    volumes:
+      - ca_org2_data:/etc/hyperledger/fabric-ca-server/msp/keystore
+
+  ca_orderer:
+    volumes:
+      - ca_orderer_data:/etc/hyperledger/fabric-ca-server/msp/keystore

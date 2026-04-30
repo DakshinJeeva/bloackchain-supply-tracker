@@ -1,0 +1,14 @@
+# CA persistent state — contains private keys, never commit to Git
+ca-persist/org1/
+ca-persist/org2/
+ca-persist/org3/
+ca-persist/orderer/
+
+# Node modules
+node_modules/
+backend/node_modules/
+frontend/node_modules/
+
+# Build artifacts
+frontend/dist/
+frontend/build/
