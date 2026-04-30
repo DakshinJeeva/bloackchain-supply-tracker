@@ -1,0 +1,10 @@
+# Persistent Ledger Volume Override for Org3
+
+networks:
+  test:
+    name: fabric_test
+
+volumes:
+  peer0.org3.example.com:
+    external: true
+    name: fabric_ledger_peer0_org3

@@ -1,0 +1,20 @@
+# Persistent Ledger Volume Override
+# Declares peer and orderer volumes as external so `docker compose down --volumes`
+# never removes them — batch/transaction data survives network restarts.
+#
+# These volumes are created once by setup-volumes.sh
+
+networks:
+  test:
+    name: fabric_test
+
+volumes:
+  orderer.example.com:
+    external: true
+    name: fabric_ledger_orderer
+  peer0.org1.example.com:
+    external: true
+    name: fabric_ledger_peer0_org1
+  peer0.org2.example.com:
+    external: true
+    name: fabric_ledger_peer0_org2

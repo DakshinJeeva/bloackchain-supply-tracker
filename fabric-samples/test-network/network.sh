@@ -318,6 +318,9 @@ function networkUp() {
     COMPOSE_FILES="${COMPOSE_FILES} -f compose/${COMPOSE_FILE_COUCH}"
   fi
 
+  # Add ledger persistence overlay (external named volumes survive network.sh down)
+  COMPOSE_FILES="${COMPOSE_FILES} -f compose/compose-ledger-persist.yaml"
+
   DOCKER_SOCK="${DOCKER_SOCK}" ${CONTAINER_CLI_COMPOSE} ${COMPOSE_FILES} up -d 2>&1
 
   $CONTAINER_CLI ps -a
@@ -466,7 +469,8 @@ function networkDown() {
   # Don't remove the generated artifacts -- note, the ledgers are always removed
   if [ "$MODE" != "restart" ]; then
     # Bring down the network, deleting the volumes
-    ${CONTAINER_CLI} volume rm docker_orderer.example.com docker_peer0.org1.example.com docker_peer0.org2.example.com
+    # Peer/orderer ledger volumes are external (fabric_ledger_*) — do not remove.
+    # To wipe ledger data intentionally: docker volume rm fabric_ledger_orderer fabric_ledger_peer0_org1 fabric_ledger_peer0_org2 fabric_ledger_peer0_org3
     #Cleanup the chaincode containers
     clearContainers
     #Cleanup images
