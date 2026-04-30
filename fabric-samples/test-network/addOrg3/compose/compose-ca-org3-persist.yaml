@@ -1,15 +1,14 @@
-# Org3 CA Persistent Volume Override
-# Extends compose-ca-org3.yaml to persist the Org3 CA keypair in a named volume.
+# Org3 CA Persistent Volume Override — Full CA Home
 
 networks:
   test:
     name: fabric_test
 
 volumes:
-  ca_org3_data:
-    name: fabric_ca_org3_data
+  fabric_ca_org3:
+    external: true
 
 services:
   ca_org3:
     volumes:
-      - ca_org3_data:/etc/hyperledger/fabric-ca-server/msp/keystore
+      - fabric_ca_org3:/etc/hyperledger/fabric-ca-server

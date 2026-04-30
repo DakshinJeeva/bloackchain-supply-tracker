@@ -1,36 +1,31 @@
-# CA Persistent Volume Override
-# This file extends compose-ca.yaml to add named Docker volumes for each CA,
-# so the CA keypair (private key, cert, db) survives network restarts.
+# CA Persistent Volume Override — Full CA Home
+# Mounts the ENTIRE CA home directory as a named Docker volume so all state
+# (ca-cert.pem, ca-key.pem, fabric-ca-server.db, msp/) survives restarts.
 #
-# Usage: docker compose -f compose/compose-ca.yaml -f compose/compose-ca-persist.yaml up -d
-# (handled automatically by start.sh)
-#
-# Named volumes are NOT removed by `docker compose down` (only by `docker compose down --volumes`).
-# network.sh down uses `down --volumes`, so we rely on bind-mount backup/restore instead.
-# See start.sh for the full orchestration.
+# Volumes are declared external so `docker compose down --volumes` never removes them.
+# Create them once with: ./setup-volumes.sh (called automatically by start.sh)
 
 networks:
   test:
     name: fabric_test
 
-# Named Docker volumes — survive docker compose down (without --volumes flag)
 volumes:
-  ca_org1_data:
-    name: fabric_ca_org1_data
-  ca_org2_data:
-    name: fabric_ca_org2_data
-  ca_orderer_data:
-    name: fabric_ca_orderer_data
+  fabric_ca_org1:
+    external: true
+  fabric_ca_org2:
+    external: true
+  fabric_ca_orderer:
+    external: true
 
 services:
   ca_org1:
     volumes:
-      - ca_org1_data:/etc/hyperledger/fabric-ca-server/msp/keystore
+      - fabric_ca_org1:/etc/hyperledger/fabric-ca-server
 
   ca_org2:
     volumes:
-      - ca_org2_data:/etc/hyperledger/fabric-ca-server/msp/keystore
+      - fabric_ca_org2:/etc/hyperledger/fabric-ca-server
 
   ca_orderer:
     volumes:
-      - ca_orderer_data:/etc/hyperledger/fabric-ca-server/msp/keystore
+      - fabric_ca_orderer:/etc/hyperledger/fabric-ca-server
