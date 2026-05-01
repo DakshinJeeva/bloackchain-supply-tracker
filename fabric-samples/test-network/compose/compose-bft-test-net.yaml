@@ -215,7 +215,7 @@ services:
       - ../organizations/peerOrganizations/org1.example.com/peers/peer0.org1.example.com:/etc/hyperledger/fabric
       - peer0.org1.example.com:/var/hyperledger/production
     working_dir: /root
-    command: peer node start
+    command: peer node start 
     ports:
       - 7051:7051
       - 9444:9444
