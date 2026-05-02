@@ -93,16 +93,11 @@ function generateOrg3() {
     fi
 
     infoln "Generating certificates using Fabric CA"
-    ${CONTAINER_CLI_COMPOSE} -f ${COMPOSE_FILE_CA_BASE} -f $COMPOSE_FILE_CA_ORG3 -f compose/compose-ca-org3-persist.yaml up -d 2>&1
+    ${CONTAINER_CLI_COMPOSE} -f ${COMPOSE_FILE_CA_BASE} -f $COMPOSE_FILE_CA_ORG3 up -d 2>&1
 
     . fabric-ca/registerEnroll.sh
 
-    # Wait for Org3 CA (cert is inside Docker volume)
-    while ! docker exec ca_org3 test -f /etc/hyperledger/fabric-ca-server/tls-cert.pem 2>/dev/null; do sleep 1; done
-    mkdir -p fabric-ca/org3
-    docker cp ca_org3:/etc/hyperledger/fabric-ca-server/ca-cert.pem  fabric-ca/org3/ca-cert.pem
-    docker cp ca_org3:/etc/hyperledger/fabric-ca-server/tls-cert.pem fabric-ca/org3/tls-cert.pem
-    sleep 3
+    sleep 10
 
     infoln "Creating Org3 Identities"
     createOrg3

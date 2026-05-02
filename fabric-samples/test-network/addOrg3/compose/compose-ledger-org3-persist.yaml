@@ -6,5 +6,4 @@ networks:
 
 volumes:
   peer0.org3.example.com:
-    external: true
     name: fabric_ledger_peer0_org3

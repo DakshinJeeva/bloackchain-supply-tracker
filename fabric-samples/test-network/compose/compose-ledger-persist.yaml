@@ -10,11 +10,8 @@ networks:
 
 volumes:
   orderer.example.com:
-    external: true
     name: fabric_ledger_orderer
   peer0.org1.example.com:
-    external: true
     name: fabric_ledger_peer0_org1
   peer0.org2.example.com:
-    external: true
     name: fabric_ledger_peer0_org2
