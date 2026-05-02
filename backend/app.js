@@ -14,7 +14,7 @@ app.use(cors());
 const CHANNEL_NAME = 'mychannel';
 const CHAINCODE_NAME = 'batchcc';
 const MSP_ID = process.env.MSP_ID || 'Org1MSP';
-//
+
 // ─── Load connection profile ──────────────────────────────────────────────────
 function getConnectionProfile(org) {
     const orgMap = {
