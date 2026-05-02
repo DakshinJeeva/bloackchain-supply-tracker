@@ -36,10 +36,10 @@ echo "✅ Network started!"
 echo "👉 Org1, Org2, Org3 are up on channel 'mychannel'"
 echo "🔐 CA keypairs are in persistent Docker volumes — wallets survive restarts."
 
-echo ""
-echo "📦 Deploying chaincode to the network..."
-bash "$SCRIPT_DIR/deploycc.sh"
 
 echo ""
-echo "🚀 Chaincode deployed successfully!"
-echo "👉 Network is fully ready for transactions"
+echo "📦 Deploying chaincode..."
+"$SCRIPT_DIR/deploycc.sh"
+
+echo ""
+echo "🚀 Chaincode deployment completed!"

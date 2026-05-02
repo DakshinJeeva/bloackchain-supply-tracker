@@ -222,27 +222,19 @@ function createOrgs() {
   # Create crypto material using Fabric CA
   if [ "$CRYPTO" == "Certificate Authorities" ]; then
     infoln "Generating certificates using Fabric CA"
-    ${CONTAINER_CLI_COMPOSE} -f compose/$COMPOSE_FILE_CA -f compose/compose-ca-persist.yaml up -d 2>&1
+    ${CONTAINER_CLI_COMPOSE} -f compose/$COMPOSE_FILE_CA up -d 2>&1
 
     . organizations/fabric-ca/registerEnroll.sh
 
-    # Wait for CA to be ready (cert is inside Docker volume, check via docker exec)
+    # Make sure CA files have been created
     while :
     do
-      if ! docker exec ca_org1 test -f /etc/hyperledger/fabric-ca-server/tls-cert.pem 2>/dev/null; then
+      if [ ! -f "organizations/fabric-ca/org1/tls-cert.pem" ]; then
         sleep 1
       else
         break
       fi
     done
-    # Copy certs from volume to host paths so registerEnroll.sh can find them
-    mkdir -p organizations/fabric-ca/org1 organizations/fabric-ca/org2 organizations/fabric-ca/ordererOrg
-    docker cp ca_org1:/etc/hyperledger/fabric-ca-server/ca-cert.pem   organizations/fabric-ca/org1/ca-cert.pem
-    docker cp ca_org1:/etc/hyperledger/fabric-ca-server/tls-cert.pem  organizations/fabric-ca/org1/tls-cert.pem
-    docker cp ca_org2:/etc/hyperledger/fabric-ca-server/ca-cert.pem   organizations/fabric-ca/org2/ca-cert.pem
-    docker cp ca_org2:/etc/hyperledger/fabric-ca-server/tls-cert.pem  organizations/fabric-ca/org2/tls-cert.pem
-    docker cp ca_orderer:/etc/hyperledger/fabric-ca-server/ca-cert.pem  organizations/fabric-ca/ordererOrg/ca-cert.pem
-    docker cp ca_orderer:/etc/hyperledger/fabric-ca-server/tls-cert.pem organizations/fabric-ca/ordererOrg/tls-cert.pem
 
     # Make sure CA service is initialized and can accept requests before making register and enroll calls
     export FABRIC_CA_CLIENT_HOME=${PWD}/organizations/peerOrganizations/org1.example.com/
@@ -474,12 +466,10 @@ function networkDown() {
     # remove orderer block and other channel configuration transactions and certs
     ${CONTAINER_CLI} run --rm -v "$(pwd):/data" busybox sh -c 'cd /data && rm -rf system-genesis-block/*.block organizations/peerOrganizations organizations/ordererOrganizations'
     ## remove fabric ca artifacts
-    # CA state lives in persistent Docker volumes (fabric_ca_org*) — do not delete.
-    # Only clean the host-side cert copies used by registerEnroll.sh.
-    rm -f organizations/fabric-ca/org1/ca-cert.pem  organizations/fabric-ca/org1/tls-cert.pem
-    rm -f organizations/fabric-ca/org2/ca-cert.pem  organizations/fabric-ca/org2/tls-cert.pem
-    rm -f organizations/fabric-ca/ordererOrg/ca-cert.pem organizations/fabric-ca/ordererOrg/tls-cert.pem
-    rm -f addOrg3/fabric-ca/org3/ca-cert.pem addOrg3/fabric-ca/org3/tls-cert.pem
+    ${CONTAINER_CLI} run --rm -v "$(pwd):/data" busybox sh -c 'cd /data && rm -rf organizations/fabric-ca/org1/msp organizations/fabric-ca/org1/tls-cert.pem organizations/fabric-ca/org1/ca-cert.pem organizations/fabric-ca/org1/IssuerPublicKey organizations/fabric-ca/org1/IssuerRevocationPublicKey organizations/fabric-ca/org1/fabric-ca-server.db'
+    ${CONTAINER_CLI} run --rm -v "$(pwd):/data" busybox sh -c 'cd /data && rm -rf organizations/fabric-ca/org2/msp organizations/fabric-ca/org2/tls-cert.pem organizations/fabric-ca/org2/ca-cert.pem organizations/fabric-ca/org2/IssuerPublicKey organizations/fabric-ca/org2/IssuerRevocationPublicKey organizations/fabric-ca/org2/fabric-ca-server.db'
+    ${CONTAINER_CLI} run --rm -v "$(pwd):/data" busybox sh -c 'cd /data && rm -rf organizations/fabric-ca/ordererOrg/msp organizations/fabric-ca/ordererOrg/tls-cert.pem organizations/fabric-ca/ordererOrg/ca-cert.pem organizations/fabric-ca/ordererOrg/IssuerPublicKey organizations/fabric-ca/ordererOrg/IssuerRevocationPublicKey organizations/fabric-ca/ordererOrg/fabric-ca-server.db'
+    ${CONTAINER_CLI} run --rm -v "$(pwd):/data" busybox sh -c 'cd /data && rm -rf addOrg3/fabric-ca/org3/msp addOrg3/fabric-ca/org3/tls-cert.pem addOrg3/fabric-ca/org3/ca-cert.pem addOrg3/fabric-ca/org3/IssuerPublicKey addOrg3/fabric-ca/org3/IssuerRevocationPublicKey addOrg3/fabric-ca/org3/fabric-ca-server.db'
     # remove channel and script artifacts
     ${CONTAINER_CLI} run --rm -v "$(pwd):/data" busybox sh -c 'cd /data && rm -rf channel-artifacts log.txt *.tar.gz'
   fi
