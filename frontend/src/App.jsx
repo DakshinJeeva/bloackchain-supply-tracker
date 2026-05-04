@@ -1,15 +1,19 @@
 import { useState } from 'react';
+import { AuthProvider, useAuth } from './context/AuthContext';
+import LoginPage from './pages/LoginPage.jsx';
+import AuthCallback from './pages/AuthCallback.jsx';
 import DashboardPage from './pages/DashboardPage.jsx';
 import BatchPage from './pages/BatchPage.jsx';
 import TransportPage from './pages/TransportPage.jsx';
 import TracePage from './pages/TracePage.jsx';
 import './index.css';
 
+// ─── Nav config with org restrictions ─────────────────────────────────────────
 const NAV = [
-  { id: 'dashboard', label: 'Dashboard', icon: '🏠', section: 'main' },
-  { id: 'batch', label: 'Batch Management', icon: '🏭', section: 'production', badge: 'Org1' },
-  { id: 'transport', label: 'Transport', icon: '🚚', section: 'logistics', badge: 'Org2' },
-  { id: 'trace', label: 'Full Traceability', icon: '🔍', section: 'consumer', badge: 'Org3' },
+  { id: 'dashboard', label: 'Dashboard', icon: '🏠', section: 'main', orgs: null },
+  { id: 'batch', label: 'Batch Management', icon: '🏭', section: 'production', badge: 'Org1', orgs: ['Org1'] },
+  { id: 'transport', label: 'Transport', icon: '🚚', section: 'logistics', badge: 'Org2', orgs: ['Org2'] },
+  { id: 'trace', label: 'Full Traceability', icon: '🔍', section: 'consumer', badge: 'Org3', orgs: ['Org3'] },
 ];
 
 const SECTIONS = [
@@ -19,10 +23,37 @@ const SECTIONS = [
   { key: 'consumer', label: 'Consumer' },
 ];
 
-export default function App() {
+const ORG_STYLE = {
+  Org1: { color: '#6366f1', emoji: '🏭' },
+  Org2: { color: '#0ea5e9', emoji: '🚚' },
+  Org3: { color: '#10b981', emoji: '🔍' },
+};
+
+// ─── Main app shell (only rendered when authenticated) ────────────────────────
+function AppShell() {
+  const { user, logout } = useAuth();
   const [page, setPage] = useState('dashboard');
+  const [showUserMenu, setShowUserMenu] = useState(false);
+
+  const orgStyle = ORG_STYLE[user?.org] || {};
+
+  const canAccess = (navItem) => {
+    if (!navItem.orgs) return true;           // open to all
+    return navItem.orgs.includes(user?.org);  // restricted
+  };
 
   const renderPage = () => {
+    if (!canAccess(NAV.find(n => n.id === page))) {
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '60vh', gap: 16 }}>
+          <div style={{ fontSize: 64 }}>🔒</div>
+          <h2 style={{ color: 'var(--text-primary)' }}>Access Denied</h2>
+          <p style={{ color: 'var(--text-muted)' }}>
+            This page is restricted. You are registered as <strong style={{ color: orgStyle.color }}>{user?.org}</strong>.
+          </p>
+        </div>
+      );
+    }
     switch (page) {
       case 'dashboard': return <DashboardPage />;
       case 'batch': return <BatchPage />;
@@ -50,23 +81,59 @@ export default function App() {
           return (
             <div className="sidebar-section" key={sec.key}>
               <div className="sidebar-section-label">{sec.label}</div>
-              {items.map(n => (
-                <div
-                  key={n.id}
-                  className={`sidebar-item ${page === n.id ? 'active' : ''}`}
-                  onClick={() => setPage(n.id)}
-                >
-                  <span className="sidebar-item-icon">{n.icon}</span>
-                  <span>{n.label}</span>
-                  {n.badge && <span className="sidebar-badge">{n.badge}</span>}
-                </div>
-              ))}
+              {items.map(n => {
+                const accessible = canAccess(n);
+                return (
+                  <div
+                    key={n.id}
+                    className={`sidebar-item ${page === n.id ? 'active' : ''} ${!accessible ? 'sidebar-item-locked' : ''}`}
+                    onClick={() => accessible && setPage(n.id)}
+                    title={!accessible ? `Requires ${n.badge}` : ''}
+                  >
+                    <span className="sidebar-item-icon">{n.icon}</span>
+                    <span>{n.label}</span>
+                    {n.badge && (
+                      <span
+                        className="sidebar-badge"
+                        style={accessible ? { background: orgStyle.color } : {}}
+                      >
+                        {accessible ? n.badge : '🔒'}
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           );
         })}
 
+        {/* User info footer */}
+        <div className="sidebar-user" onClick={() => setShowUserMenu(v => !v)}>
+          <div className="sidebar-user-avatar" style={{ borderColor: orgStyle.color }}>
+            {user?.picture
+              ? <img src={user.picture} alt={user.name} referrerPolicy="no-referrer" />
+              : <span>{user?.name?.[0] || '?'}</span>}
+          </div>
+          <div className="sidebar-user-info">
+            <div className="sidebar-user-name">{user?.name}</div>
+            <div className="sidebar-user-org" style={{ color: orgStyle.color }}>
+              {orgStyle.emoji} {user?.org}
+            </div>
+          </div>
+          <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--text-muted)' }}>▾</span>
+        </div>
+
+        {showUserMenu && (
+          <div className="sidebar-user-menu">
+            <div className="sidebar-user-menu-email">{user?.email}</div>
+            <button id="logout-btn" className="sidebar-logout-btn" onClick={logout}>
+              🚪 Sign out
+            </button>
+          </div>
+        )}
+
         {/* Footer */}
-        <div style={{ marginTop: 'auto', padding: '20px 24px', borderTop: '1px solid var(--border)', fontSize: 11, color: 'var(--text-muted)' }}>
+        <div style={{ padding: '12px 24px', borderTop: '1px solid var(--border)', fontSize: 11, color: 'var(--text-muted)' }}>
           <div style={{ marginBottom: 4 }}>🧱 Hyperledger Fabric</div>
           <div>Channel: <span style={{ color: 'var(--accent-blue)', fontFamily: 'monospace' }}>mychannel</span></div>
           <div>Chaincode: <span style={{ color: 'var(--accent-cyan)', fontFamily: 'monospace' }}>batchcc</span></div>
@@ -78,5 +145,48 @@ export default function App() {
         {renderPage()}
       </main>
     </div>
+  );
+}
+
+// ─── Root with auth routing ───────────────────────────────────────────────────
+function Root() {
+  const { user, loading } = useAuth();
+  const [forcedPage, setForcedPage] = useState(() => window.location.pathname);
+
+  const navigate = (path) => {
+    window.history.pushState({}, '', path);
+    setForcedPage(path);
+  };
+
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}>
+        <div className="glass-card" style={{ padding: 40, textAlign: 'center' }}>
+          <div style={{ fontSize: 48, marginBottom: 16, animation: 'spin 1s linear infinite' }}>⚙️</div>
+          <p style={{ color: 'var(--text-muted)' }}>Loading…</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Handle OAuth callback
+  if (forcedPage.startsWith('/auth/callback')) {
+    return <AuthCallback onDone={navigate} />;
+  }
+
+  // Not logged in → login / signup
+  if (!user) {
+    return <LoginPage onLogin={() => navigate('/dashboard')} />;
+  }
+
+  // Logged in → app
+  return <AppShell />;
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <Root />
+    </AuthProvider>
   );
 }

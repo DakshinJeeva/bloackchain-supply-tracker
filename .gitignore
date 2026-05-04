@@ -12,3 +12,7 @@ frontend/node_modules/
 # Build artifacts
 frontend/dist/
 frontend/build/
+
+# Secrets & user data — never commit
+backend/.env
+backend/users.json
