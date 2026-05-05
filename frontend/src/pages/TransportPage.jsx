@@ -11,6 +11,10 @@ export default function TransportPage() {
     const [alert, setAlert] = useState(null);
     const [result, setResult] = useState(null);
 
+    // Shared "carried by" field — required on every write transaction
+    const [carriedBy, setCarriedBy] = useState('');
+    const carriedByValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(carriedBy);
+
     // Create Transport
     const [ct, setCt] = useState({ transportId: '', batchIds: '', startTime: now(), location: '' });
     // Track Cargo
@@ -26,7 +30,7 @@ export default function TransportPage() {
         setLoading(true); setAlert(null);
         try {
             const batchIds = ct.batchIds.split(',').map(s => s.trim()).filter(Boolean);
-            const data = await createTransport({ ...ct, batchIds });
+            const data = await createTransport({ ...ct, batchIds, carriedBy });
             setResult(data);
             showAlert('success', `Transport "${ct.transportId}" created!`);
         } catch (e) { showAlert('error', e.message); }
@@ -37,7 +41,7 @@ export default function TransportPage() {
         setLoading(true); setAlert(null);
         try {
             const batchIds = tk.batchIds.split(',').map(s => s.trim()).filter(Boolean);
-            const data = await trackCargo(tk.transportId, { ...tk, batchIds });
+            const data = await trackCargo(tk.transportId, { ...tk, batchIds, carriedBy });
             setResult(data);
             showAlert('success', 'Tracking log appended to the ledger!');
         } catch (e) { showAlert('error', e.message); }
@@ -47,7 +51,7 @@ export default function TransportPage() {
     async function handleComplete() {
         setLoading(true); setAlert(null);
         try {
-            const data = await completeTransport(cp.transportId, { endLocation: cp.endLocation });
+            const data = await completeTransport(cp.transportId, { endLocation: cp.endLocation, carriedBy });
             setResult(data);
             showAlert('success', `Transport "${cp.transportId}" marked as DELIVERED!`);
         } catch (e) { showAlert('error', e.message); }
@@ -75,6 +79,36 @@ export default function TransportPage() {
             <div className="page-header">
                 <h1 className="page-title">🚚 <span>Transport Management</span></h1>
                 <p className="page-subtitle">Create, track, complete, and query transport shipments (Org2)</p>
+            </div>
+
+            {/* Carried By — required for every write transaction */}
+            <div className="card" style={{
+                marginBottom: 20,
+                background: carriedByValid
+                    ? 'linear-gradient(135deg, rgba(16,185,129,.06), transparent)'
+                    : 'linear-gradient(135deg, rgba(245,158,11,.06), transparent)',
+                border: `1px solid ${carriedByValid ? 'rgba(16,185,129,.25)' : 'rgba(245,158,11,.25)'}`,
+            }}>
+                <div className="card-header" style={{ marginBottom: 12 }}>
+                    <div className="card-icon" style={{ background: carriedByValid ? 'rgba(16,185,129,.15)' : 'rgba(245,158,11,.15)', fontSize: 18 }}>
+                        {carriedByValid ? '✅' : '📧'}
+                    </div>
+                    <div>
+                        <div className="card-title" style={{ fontSize: 14 }}>Carried By (Transaction Witness)</div>
+                        <div className="card-subtitle">
+                            Every blockchain write requires a second Gmail to co-sign accountability. Must differ from your own.
+                        </div>
+                    </div>
+                </div>
+                <input
+                    id="carried-by-input-transport"
+                    className="form-input"
+                    placeholder="colleague@example.com (any Google account)"
+                    type="email"
+                    value={carriedBy}
+                    onChange={e => setCarriedBy(e.target.value)}
+                    style={{ borderColor: carriedByValid ? 'rgba(16,185,129,.4)' : '' }}
+                />
             </div>
 
             <div className="tabs">
@@ -116,7 +150,7 @@ export default function TransportPage() {
                         </div>
                     </div>
                     <div style={{ marginTop: 24, display: 'flex', justifyContent: 'flex-end' }}>
-                        <button className="btn btn-cyan" onClick={handleCreate} disabled={loading || !ct.transportId || !ct.batchIds || !ct.location}>
+                        <button className="btn btn-cyan" onClick={handleCreate} disabled={loading || !ct.transportId || !ct.batchIds || !ct.location || !carriedByValid}>
                             {loading ? <Spinner /> : '🚚'} Create Transport
                         </button>
                     </div>
@@ -156,7 +190,7 @@ export default function TransportPage() {
                         </div>
                     </div>
                     <div style={{ marginTop: 24, display: 'flex', justifyContent: 'flex-end' }}>
-                        <button className="btn btn-warning" onClick={handleTrack} disabled={loading || !tk.transportId || !tk.temperature || !tk.speed || !tk.location}>
+                        <button className="btn btn-warning" onClick={handleTrack} disabled={loading || !tk.transportId || !tk.temperature || !tk.speed || !tk.location || !carriedByValid}>
                             {loading ? <Spinner /> : '📡'} Send Tracking Log
                         </button>
                     </div>
@@ -184,7 +218,7 @@ export default function TransportPage() {
                         </div>
                     </div>
                     <div style={{ marginTop: 24, display: 'flex', justifyContent: 'flex-end' }}>
-                        <button className="btn btn-success" onClick={handleComplete} disabled={loading || !cp.transportId || !cp.endLocation}>
+                        <button className="btn btn-success" onClick={handleComplete} disabled={loading || !cp.transportId || !cp.endLocation || !carriedByValid}>
                             {loading ? <Spinner /> : '✅'} Mark as Delivered
                         </button>
                     </div>

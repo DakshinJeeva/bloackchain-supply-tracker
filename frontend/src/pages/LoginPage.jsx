@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAuth, API } from '../context/AuthContext';
 
 const ORG_INFO = {
@@ -30,12 +30,14 @@ const ORG_INFO = {
 
 export default function LoginPage({ onLogin }) {
   const { login } = useAuth();
-  const [step, setStep] = useState('login');       // 'login' | 'org'
+  const [step, setStep] = useState('login');       // 'login' | 'org' | 'pending'
   const [tempToken, setTempToken] = useState(null);
   const [selectedOrg, setSelectedOrg] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [googleProfile, setGoogleProfile] = useState(null);
+  const [pendingUserId, setPendingUserId] = useState(null);
+  const [pendingMeta, setPendingMeta] = useState(null); // { isFirstMember, mspId }
 
   // Detect if we're back from OAuth on the signup step
   useEffect(() => {
@@ -77,14 +79,40 @@ export default function LoginPage({ onLogin }) {
       });
       const data = await res.json();
       if (!data.success) throw new Error(data.error);
-      login(data.token);
-      onLogin();
+
+      if (data.approved) {
+        // Already approved (shouldn't happen with new flow, but just in case)
+        login(data.token);
+        onLogin();
+      } else if (data.isFirstMember) {
+        // First member of org → must enroll CA cert first
+        setPendingUserId(data.userId);
+        setPendingMeta({ isFirstMember: true, mspId: data.mspId });
+        setStep('pending');
+      } else {
+        // Subsequent member → wait for admin approval
+        setPendingUserId(data.userId);
+        setPendingMeta({ isFirstMember: false });
+        setStep('pending');
+      }
     } catch (e) {
       setError(e.message);
     } finally {
       setLoading(false);
     }
   };
+
+  if (step === 'pending') {
+    return (
+      <PendingApprovalScreen
+        userId={pendingUserId}
+        profile={googleProfile}
+        org={selectedOrg}
+        meta={pendingMeta}
+        onApproved={(token) => { login(token); onLogin(); }}
+      />
+    );
+  }
 
   if (step === 'org') {
     return <OrgSelectionStep
@@ -153,6 +181,233 @@ export default function LoginPage({ onLogin }) {
               </div>
             ))}
           </div>
+        </div>
+
+        <p className="auth-footer">
+          Powered by Hyperledger Fabric · Channel: <code>mychannel</code>
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ─── Pending Approval Screen ──────────────────────────────────────────────────
+function PendingApprovalScreen({ userId, profile, org, meta, onApproved }) {
+  const [dots, setDots] = useState('');
+  const [caLoading, setCaLoading] = useState(false);
+  const [caError, setCaError] = useState(null);
+  const [caSuccess, setCaSuccess] = useState(false);
+
+  const isFirstAdmin = meta?.isFirstMember === true;
+
+  // Poll every 5 seconds (only for regular pending members)
+  useEffect(() => {
+    if (!userId || isFirstAdmin) return;
+    const poll = async () => {
+      try {
+        const res = await fetch(`${API}/auth/status?userId=${userId}`);
+        const data = await res.json();
+        if (data.success && data.approved) {
+          onApproved(data.token);
+        }
+      } catch { /* keep polling */ }
+    };
+
+    poll();
+    const interval = setInterval(poll, 5000);
+    return () => clearInterval(interval);
+  }, [userId, isFirstAdmin, onApproved]);
+
+  // Animated dots
+  useEffect(() => {
+    const t = setInterval(() => setDots(d => d.length >= 3 ? '' : d + '.'), 500);
+    return () => clearInterval(t);
+  }, []);
+
+  const handleEnrollCA = async () => {
+    setCaLoading(true);
+    setCaError(null);
+    try {
+      // We need a temp token to call the enroll-ca endpoint.
+      // Since the admin is 'ca_pending', they need to get a JWT first via a special status check.
+      const statusRes = await fetch(`${API}/auth/status?userId=${userId}`);
+      const statusData = await statusRes.json();
+
+      // The admin is ca_pending so approved===false, but we can still get a temp token
+      // by calling enroll-ca directly with a special unauthenticated path using userId
+      const res = await fetch(`${API}/auth/admin/enroll-ca-by-id`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId }),
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error);
+      setCaSuccess(true);
+      setTimeout(() => onApproved(data.token), 1200);
+    } catch (e) {
+      setCaError(e.message);
+    } finally {
+      setCaLoading(false);
+    }
+  };
+
+  const orgInfo = ORG_INFO[org] || {};
+
+  return (
+    <div className="auth-page">
+      <div className="auth-bg">
+        <div className="auth-orb auth-orb-1" />
+        <div className="auth-orb auth-orb-2" />
+        <div className="auth-orb auth-orb-3" />
+        <div className="auth-grid" />
+      </div>
+
+      <div className="auth-container">
+        <div className="auth-brand">
+          <div className="auth-brand-icon">🔗</div>
+          <div className="auth-brand-name">Chain<span>Trace</span></div>
+        </div>
+
+        <div className="auth-card" style={{ textAlign: 'center', padding: '40px 32px' }}>
+          {/* Icon */}
+          <div style={{
+            width: 88, height: 88, borderRadius: '50%',
+            background: `linear-gradient(135deg, ${orgInfo.color || '#6366f1'}22, ${orgInfo.color || '#6366f1'}44)`,
+            border: `2px solid ${orgInfo.color || '#6366f1'}55`,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 40, margin: '0 auto 24px',
+            animation: 'pulse 2s ease-in-out infinite',
+          }}>
+            {isFirstAdmin ? '🏛️' : '🔐'}
+          </div>
+
+          {/* ─── FIRST ADMIN: Enroll CA Certificate ─── */}
+          {isFirstAdmin ? (<>
+            <h1 className="auth-title" style={{ fontSize: 22, marginBottom: 12 }}>
+              Initialize Org CA Certificate
+            </h1>
+            <p className="auth-subtitle" style={{ marginBottom: 20, lineHeight: 1.6 }}>
+              You are the <strong style={{ color: orgInfo.color || '#6366f1' }}>first admin</strong> of{' '}
+              <strong style={{ color: orgInfo.color || '#6366f1' }}>{orgInfo.label || org}</strong>.<br />
+              Before you can log in or approve members, you must enroll the <strong>Fabric CA admin certificate</strong> for your org.
+              This certificate is used to sign all future member certificates.
+            </p>
+
+            {profile && (
+              <div className="auth-user-pill" style={{ justifyContent: 'center', marginBottom: 24 }}>
+                <div className="auth-user-pill-avatar">
+                  {profile.picture
+                    ? <img src={profile.picture} alt={profile.name} referrerPolicy="no-referrer" />
+                    : <span>{profile.name?.[0] || '?'}</span>}
+                </div>
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: 14 }}>{profile.name}</div>
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{profile.email}</div>
+                </div>
+              </div>
+            )}
+
+            {/* Steps */}
+            <div style={{
+              background: 'rgba(255,255,255,.03)',
+              border: '1px solid var(--border)',
+              borderRadius: 12, padding: '16px 20px',
+              marginBottom: 20, textAlign: 'left',
+            }}>
+              {[
+                { icon: '1️⃣', text: `Enroll CA admin certificate for ${org}` },
+                { icon: '2️⃣', text: 'Your account is activated as Org Admin' },
+                { icon: '3️⃣', text: 'Use the CA cert to approve new member certificates' },
+              ].map((s, i) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 0', fontSize: 13, color: 'var(--text-muted)' }}>
+                  <span style={{ fontSize: 18, flexShrink: 0 }}>{s.icon}</span>
+                  <span>{s.text}</span>
+                </div>
+              ))}
+            </div>
+
+            {caError && (
+              <div style={{
+                background: 'rgba(239,68,68,.1)', border: '1px solid rgba(239,68,68,.3)',
+                borderRadius: 8, padding: '10px 16px', marginBottom: 16,
+                fontSize: 13, color: '#ef4444',
+              }}>⚠️ {caError}</div>
+            )}
+
+            {caSuccess ? (
+              <div style={{
+                background: 'rgba(16,185,129,.12)', border: '1px solid rgba(16,185,129,.3)',
+                borderRadius: 8, padding: '12px 20px', fontSize: 14, color: '#10b981',
+              }}>✅ CA certificate enrolled! Logging you in…</div>
+            ) : (
+              <button
+                id="enroll-ca-btn"
+                onClick={handleEnrollCA}
+                disabled={caLoading}
+                style={{
+                  width: '100%', padding: '14px 0',
+                  border: 'none', borderRadius: 12, cursor: 'pointer',
+                  background: caLoading
+                    ? 'rgba(99,102,241,.3)'
+                    : 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+                  color: '#fff', fontWeight: 700, fontSize: 15,
+                  boxShadow: caLoading ? 'none' : '0 4px 20px rgba(99,102,241,.4)',
+                  transition: 'all .2s',
+                }}
+              >
+                {caLoading ? '⏳ Enrolling CA Certificate…' : '🔐 Enroll CA Admin Certificate'}
+              </button>
+            )}
+          </>) : (<>
+            {/* ─── REGULAR MEMBER: Waiting for admin ─── */}
+            <h1 className="auth-title" style={{ fontSize: 22, marginBottom: 12 }}>
+              Awaiting Certificate Generation
+            </h1>
+
+            <p className="auth-subtitle" style={{ marginBottom: 20, lineHeight: 1.6 }}>
+              Your registration for{' '}
+              <strong style={{ color: orgInfo.color || '#6366f1' }}>
+                {orgInfo.label || org}
+              </strong>{' '}
+              has been submitted. The org admin will review your request and generate your Fabric certificate.
+            </p>
+
+            {profile && (
+              <div className="auth-user-pill" style={{ justifyContent: 'center', marginBottom: 24 }}>
+                <div className="auth-user-pill-avatar">
+                  {profile.picture
+                    ? <img src={profile.picture} alt={profile.name} referrerPolicy="no-referrer" />
+                    : <span>{profile.name?.[0] || '?'}</span>}
+                </div>
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: 14 }}>{profile.name}</div>
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{profile.email}</div>
+                </div>
+              </div>
+            )}
+
+            {/* Polling indicator */}
+            <div style={{
+              display: 'inline-flex', alignItems: 'center', gap: 10,
+              background: 'rgba(255,255,255,.04)',
+              border: '1px solid var(--border)',
+              borderRadius: 40, padding: '10px 20px',
+              fontSize: 13, color: 'var(--text-muted)',
+            }}>
+              <span style={{
+                width: 8, height: 8, borderRadius: '50%',
+                background: '#f59e0b', boxShadow: '0 0 8px #f59e0b',
+                display: 'inline-block',
+                animation: 'pulse 1.2s ease-in-out infinite',
+              }} />
+              Waiting for admin approval{dots}
+            </div>
+
+            <div style={{ marginTop: 28, fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.6 }}>
+              This page will automatically redirect once your certificate is issued.<br />
+              You can safely close this tab and come back later.
+            </div>
+          </>)}
         </div>
 
         <p className="auth-footer">

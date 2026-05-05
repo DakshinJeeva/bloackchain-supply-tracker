@@ -21,6 +21,9 @@ export default function BatchPage() {
     const [alert, setAlert] = useState(null);
     const [result, setResult] = useState(null);
 
+    // Shared "carried by" field — required on every write transaction
+    const [carriedBy, setCarriedBy] = useState('');
+
     // Step 0 – Create Batch
     const [c0, setC0] = useState({ batchId: '', type: '', location: '', dateTime: now(), photo: '' });
     // Step 1 – Drying
@@ -35,7 +38,7 @@ export default function BatchPage() {
     async function handleStep0() {
         setLoading(true); setAlert(null);
         try {
-            const data = await createBatch(c0);
+            const data = await createBatch({ ...c0, carriedBy });
             setBatchId(c0.batchId);
             setResult(data);
             showAlert('success', `Batch "${c0.batchId}" created on the ledger!`);
@@ -47,7 +50,7 @@ export default function BatchPage() {
     async function handleStep1() {
         setLoading(true); setAlert(null);
         try {
-            const data = await addDrying(batchId, c1);
+            const data = await addDrying(batchId, { ...c1, carriedBy });
             setResult(data);
             showAlert('success', 'Drying step recorded on the ledger!');
             setStep(2);
@@ -58,7 +61,7 @@ export default function BatchPage() {
     async function handleStep2() {
         setLoading(true); setAlert(null);
         try {
-            const data = await addMixing(batchId, c2);
+            const data = await addMixing(batchId, { ...c2, carriedBy });
             setResult(data);
             showAlert('success', 'Mixing step recorded on the ledger!');
             setStep(3);
@@ -69,7 +72,7 @@ export default function BatchPage() {
     async function handleStep3() {
         setLoading(true); setAlert(null);
         try {
-            const data = await addProduct(batchId, c3);
+            const data = await addProduct(batchId, { ...c3, carriedBy });
             setResult(data);
             showAlert('success', '🎉 Product finalised on the ledger! All production phases complete.');
             setStep(4);
@@ -78,18 +81,51 @@ export default function BatchPage() {
     }
 
     function reset() {
-        setStep(0); setBatchId(''); setResult(null); setAlert(null);
+        setStep(0); setBatchId(''); setResult(null); setAlert(null); setCarriedBy('');
         setC0({ batchId: '', type: '', location: '', dateTime: now(), photo: '' });
         setC1({ temperature: '', duration: '', dateTime: now() });
         setC2({ temperature: '', ingredients: '', dateTime: now() });
         setC3({ photo: '', dateTime: now() });
     }
 
+    // Disable submit buttons if carriedBy is not a valid gmail different from the user's email
+    const carriedByValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(carriedBy);
+
     return (
         <div>
             <div className="page-header">
                 <h1 className="page-title">🏭 <span>Batch Management</span></h1>
                 <p className="page-subtitle">Step through the full production pipeline — collection → drying → mixing → product</p>
+            </div>
+
+            {/* Carried By — required for every transaction */}
+            <div className="card" style={{
+                marginBottom: 20,
+                background: carriedByValid
+                    ? 'linear-gradient(135deg, rgba(16,185,129,.06), transparent)'
+                    : 'linear-gradient(135deg, rgba(245,158,11,.06), transparent)',
+                border: `1px solid ${carriedByValid ? 'rgba(16,185,129,.25)' : 'rgba(245,158,11,.25)'}`,
+            }}>
+                <div className="card-header" style={{ marginBottom: 12 }}>
+                    <div className="card-icon" style={{ background: carriedByValid ? 'rgba(16,185,129,.15)' : 'rgba(245,158,11,.15)', fontSize: 18 }}>
+                        {carriedByValid ? '✅' : '📧'}
+                    </div>
+                    <div>
+                        <div className="card-title" style={{ fontSize: 14 }}>Carried By (Transaction Witness)</div>
+                        <div className="card-subtitle">
+                            Every blockchain write requires a second Gmail to co-sign accountability. Must differ from your own.
+                        </div>
+                    </div>
+                </div>
+                <input
+                    id="carried-by-input"
+                    className="form-input"
+                    placeholder="colleague@example.com (any Google account)"
+                    type="email"
+                    value={carriedBy}
+                    onChange={e => setCarriedBy(e.target.value)}
+                    style={{ borderColor: carriedByValid ? 'rgba(16,185,129,.4)' : '' }}
+                />
             </div>
 
             {/* Stepper */}
@@ -142,7 +178,7 @@ export default function BatchPage() {
                         </div>
                     </div>
                     <div style={{ marginTop: 24, display: 'flex', justifyContent: 'flex-end' }}>
-                        <button className="btn btn-success" onClick={handleStep0} disabled={loading || !c0.batchId || !c0.type || !c0.location}>
+                        <button className="btn btn-success" onClick={handleStep0} disabled={loading || !c0.batchId || !c0.type || !c0.location || !carriedByValid}>
                             {loading ? <Spinner /> : '🌿'} Create Batch
                         </button>
                     </div>
@@ -175,7 +211,7 @@ export default function BatchPage() {
                     </div>
                     <div style={{ marginTop: 24, display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
                         <button className="btn btn-ghost btn-sm" onClick={() => setStep(0)}>← Back</button>
-                        <button className="btn btn-warning" onClick={handleStep1} disabled={loading || !c1.temperature || !c1.duration}>
+                        <button className="btn btn-warning" onClick={handleStep1} disabled={loading || !c1.temperature || !c1.duration || !carriedByValid}>
                             {loading ? <Spinner /> : '🔥'} Record Drying
                         </button>
                     </div>
@@ -208,7 +244,7 @@ export default function BatchPage() {
                     </div>
                     <div style={{ marginTop: 24, display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
                         <button className="btn btn-ghost btn-sm" onClick={() => setStep(1)}>← Back</button>
-                        <button className="btn btn-purple" onClick={handleStep2} disabled={loading || !c2.temperature || !c2.ingredients}>
+                        <button className="btn btn-purple" onClick={handleStep2} disabled={loading || !c2.temperature || !c2.ingredients || !carriedByValid}>
                             {loading ? <Spinner /> : '🧪'} Record Mixing
                         </button>
                     </div>
@@ -237,7 +273,7 @@ export default function BatchPage() {
                     </div>
                     <div style={{ marginTop: 24, display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
                         <button className="btn btn-ghost btn-sm" onClick={() => setStep(2)}>← Back</button>
-                        <button className="btn btn-primary" onClick={handleStep3} disabled={loading}>
+                        <button className="btn btn-primary" onClick={handleStep3} disabled={loading || !carriedByValid}>
                             {loading ? <Spinner /> : '📦'} Finalise Product
                         </button>
                     </div>
