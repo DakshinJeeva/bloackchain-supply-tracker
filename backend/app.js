@@ -511,19 +511,7 @@ app.get('/auth/admin/ca-status', requireAuth, async (req, res) => {
 });
 
 
-app.post('/auth/admin/ca-status', requireAuth, async (req, res) => {
-    try {
-        const admin = readUsers().find(u => u.id === req.user.id);
-        if (!admin || !admin.isAdmin) {
-            return res.status(403).json({ success: false, error: 'Admin access required.' });
-        }
-        const mspId = ORG_MSP_MAP[admin.org];
-        const exists = await caAdminExists(mspId);
-        res.json({ success: true, caEnrolled: exists, mspId, org: admin.org });
-    } catch (e) {
-        res.status(500).json({ success: false, error: e.message });
-    }
-});
+
 // Enroll CA admin certificate for admin's org (must be done before approving any users)
 app.post('/auth/admin/enroll-ca', requireAuth, async (req, res) => {
     try {
