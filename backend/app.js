@@ -433,9 +433,11 @@ app.get('/auth/admin/pending', requireAuth, (req, res) => {
             return res.status(403).json({ success: false, error: 'Admin access required.' });
         }
         const pending = readUsers().filter(u => u.org === admin.org && u.certStatus === 'pending');
-        res.json({ success: true, pending: pending.map(u => ({
-            id: u.id, name: u.name, email: u.email, picture: u.picture, registeredAt: u.registeredAt
-        })) });
+        res.json({
+            success: true, pending: pending.map(u => ({
+                id: u.id, name: u.name, email: u.email, picture: u.picture, registeredAt: u.registeredAt
+            }))
+        });
     } catch (e) {
         res.status(500).json({ success: false, error: e.message });
     }
