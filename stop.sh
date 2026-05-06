@@ -3,4 +3,4 @@
 # and will be reused on the next `start.sh` run.
 
 set -e
-afafasdawdadawd
+afafasd
