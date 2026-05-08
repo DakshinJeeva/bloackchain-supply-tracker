@@ -1,7 +1,6 @@
 'use strict';
 require('dotenv').config();
-
-const express = require('express');
+const { enrollAdmin, registerAndEnrollUser } = require('../fabric-samples/test-application/javascript/CAUtil'); const express = require('express');
 const cors = require('cors');
 const session = require('express-session');
 const passport = require('passport');
@@ -11,7 +10,6 @@ const { Gateway, Wallets } = require('fabric-network');
 const FabricCAServices = require('fabric-ca-client');
 const path = require('path');
 const fs = require('fs');
-
 const app = express();
 
 // ─── CORS ─────────────────────────────────────────────────────────────────────
@@ -113,6 +111,35 @@ function buildCAClient(mspId) {
     );
 }
 
+// Helper to get the CCP file for an org
+function getCCP(org) {
+    const mspId = ORG_MSP_MAP[org];
+    if (!mspId) throw new Error(`Unknown org: ${org}`);
+    const { domain } = CA_CONFIG[mspId];
+    const ccpPath = path.resolve(__dirname, '..', 'fabric-samples', 'test-network',
+        'organizations', 'peerOrganizations', domain,
+        `connection-${domain.split('.')[0]}.json`);
+    if (!fs.existsSync(ccpPath)) {
+        throw new Error(`Connection profile not found at: ${ccpPath}`);
+    }
+    return JSON.parse(fs.readFileSync(ccpPath, 'utf8'));
+}
+
+// Helper to build a CA client
+function getCA(org) {
+    const mspId = ORG_MSP_MAP[org];
+    if (!mspId) throw new Error(`Unknown org: ${org}`);
+    const { caName, domain } = CA_CONFIG[mspId];
+    const ccp = getCCP(org);
+    const caInfo = ccp.certificateAuthorities[caName];
+    if (!caInfo) {
+        throw new Error(`CA info not found in CCP for org: ${org}`);
+    }
+    return new FabricCAServices(caInfo.url, {
+        trustedRoots: caInfo.tlsCACerts?.pem || [],
+        verify: false
+    }, caInfo.caName);
+}
 async function getWallet(mspId) {
     return Wallets.newFileSystemWallet(path.join(__dirname, 'wallet', mspId));
 }
@@ -339,71 +366,71 @@ const ORG_MSP_MAP = {
 };
 
 // Complete registration: assign org and queue for admin approval
+
 app.post('/auth/register', async (req, res) => {
     try {
         const { tempToken, org } = req.body;
+
         if (!['Org1', 'Org2', 'Org3'].includes(org)) {
-            return res.status(400).json({ success: false, error: 'Invalid org. Must be Org1, Org2, or Org3.' });
+            return res.status(400).json({ success: false, error: 'Invalid org' });
         }
 
-        let decoded;
-        try {
-            decoded = verifyToken(tempToken);
-        } catch {
-            return res.status(401).json({ success: false, error: 'Temp token expired. Please sign in again.' });
-        }
-
+        const decoded = verifyToken(tempToken);
         const { googleId, email, name, picture } = decoded;
 
-        // Prevent duplicate
-        const existing = findUserByGoogleId(googleId);
-        if (existing) {
-            if (existing.org) {
-                // If already approved, issue token; if pending, just return status
-                if (existing.certStatus === 'approved') {
-                    const token = signToken(existing);
-                    return res.json({ success: true, approved: true, token, user: existing });
-                }
-                return res.json({ success: true, approved: false, userId: existing.id, message: 'Your registration is pending admin approval.' });
-            }
-            // Update org for unfinished registration
-            existing.org = org;
-            existing.certStatus = 'pending';
-            const users = readUsers().filter(u => u.googleId !== googleId);
-            users.push(existing);
-            writeUsers(users);
-            return res.json({ success: true, approved: false, userId: existing.id, message: 'Pending admin approval.' });
+        const mspId = ORG_MSP_MAP[org];
+
+        let user = findUserByGoogleId(googleId);
+
+        if (!user) {
+            user = createUser({
+                googleId,
+                email,
+                name,
+                picture,
+                org,
+                certStatus: 'enrolling'
+            });
+        } else {
+            user.org = org;
         }
 
-        // Check if any approved member already exists for this org
-        const orgApprovedUsers = readUsers().filter(u => u.org === org && u.certStatus === 'approved');
-        const isFirstMember = orgApprovedUsers.length === 0;
+        const caClient = getCA(org);
+        const wallet = await getWallet(mspId);
 
-        if (isFirstMember) {
-            // First member becomes the org admin.
-            // They are created with certStatus='ca_pending' — must enroll the
-            // Fabric CA admin certificate before they can log in and manage members.
-            const newUser = createUser({
-                googleId, email, name, picture, org,
-                certStatus: 'ca_pending',
-                isAdmin: true,
-            });
-            return res.json({
-                success: true,
-                approved: false,
-                isAdmin: true,
-                isFirstMember: true,
-                userId: newUser.id,
-                mspId: ORG_MSP_MAP[org],
-                message: 'You are the first member of this org. Please enroll the CA admin certificate to activate your account.',
-            });
-        }
+        // 🔥 STEP 1: Ensure admin exists
+        await enrollAdmin(caClient, wallet, mspId);
 
-        // Subsequent users → pending approval from org admin
-        const newUser = createUser({ googleId, email, name, picture, org, certStatus: 'pending', isAdmin: false });
-        res.json({ success: true, approved: false, userId: newUser.id, message: 'Your request is pending approval from your org admin.' });
+        // 🔥 STEP 2: Register + Enroll user
+        await registerAndEnrollUser(
+            caClient,
+            wallet,
+            mspId,
+            user.id,
+            `${org.toLowerCase()}.department1`
+        );
+
+        // ✅ Update status
+        user.certStatus = 'approved';
+
+        const users = readUsers().filter(u => u.googleId !== googleId);
+        users.push(user);
+        writeUsers(users);
+
+        const token = signToken(user);
+
+        res.json({
+            success: true,
+            approved: true,
+            token,
+            user
+        });
+
     } catch (e) {
-        res.status(500).json({ success: false, error: e.message });
+        res.status(500).json({
+            success: false,
+            error: e.message
+        });
     }
 });
 
@@ -655,31 +682,7 @@ async function buildWallet(walletPath) {
     return await Wallets.newFileSystemWallet(walletPath);
 }
 
-async function enrollAdmin(mspId) {
-    const orgMap = {
-        Org1MSP: { ca: 'ca.org1.example.com', user: 'admin', pw: 'adminpw' },
-        Org2MSP: { ca: 'ca.org2.example.com', user: 'admin', pw: 'adminpw' },
-        Org3MSP: { ca: 'ca.org3.example.com', user: 'admin', pw: 'adminpw' },
-    };
-    const { ca: caName, user, pw } = orgMap[mspId];
-    const ccp = getConnectionProfile(mspId);
-    const caInfo = ccp.certificateAuthorities[caName];
-    const caClient = new FabricCAServices(caInfo.url, { trustedRoots: caInfo.tlsCACerts.pem, verify: false }, caInfo.caName);
 
-    const walletPath = path.join(__dirname, 'wallet', mspId);
-    const wallet = await buildWallet(walletPath);
-
-    if (!await wallet.get(user)) {
-        const enrollment = await caClient.enroll({ enrollmentID: user, enrollmentSecret: pw });
-        await wallet.put(user, {
-            credentials: { certificate: enrollment.certificate, privateKey: enrollment.key.toBytes() },
-            mspId,
-            type: 'X.509',
-        });
-        console.log(`✅ Admin enrolled for ${mspId}`);
-    }
-    return wallet;
-}
 
 async function getContract(mspId) {
     const wallet = await enrollAdmin(mspId);
