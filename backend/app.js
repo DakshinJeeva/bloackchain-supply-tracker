@@ -684,18 +684,32 @@ async function buildWallet(walletPath) {
 
 
 
-async function getContract(mspId) {
-    const wallet = await enrollAdmin(mspId);
+async function getContract(mspId, userId) {
+    const org = Object.keys(ORG_MSP_MAP).find(k => ORG_MSP_MAP[k] === mspId);
+
+    const caClient = getCA(org);
+    const wallet = await getWallet(mspId);
+
+
+    await enrollAdmin(caClient, wallet, mspId); // ensure admin exists
+
     const ccp = getConnectionProfile(mspId);
     const gateway = new Gateway();
-    await gateway.connect(ccp, { wallet, identity: 'admin', discovery: { enabled: true, asLocalhost: true } });
+
+    await gateway.connect(ccp, {
+        wallet,
+        identity: userId,
+        discovery: { enabled: true, asLocalhost: true }
+    });
+
     const network = await gateway.getNetwork(CHANNEL_NAME);
     const contract = network.getContract(CHAINCODE_NAME);
+
     return { contract, gateway };
 }
 
-async function invoke(mspId, fn, args) {
-    const { contract, gateway } = await getContract(mspId);
+async function invoke(mspId, fn, args, userId) {
+    const { contract, gateway } = await getContract(mspId, userId);
     try {
         const result = await contract.submitTransaction(fn, ...args);
         return result ? JSON.parse(result.toString()) : {};
@@ -704,8 +718,8 @@ async function invoke(mspId, fn, args) {
     }
 }
 
-async function query(mspId, fn, args) {
-    const { contract, gateway } = await getContract(mspId);
+async function query(mspId, fn, args, userId) {
+    const { contract, gateway } = await getContract(mspId, userId);
     try {
         const result = await contract.evaluateTransaction(fn, ...args);
         return result ? JSON.parse(result.toString()) : {};
@@ -722,7 +736,7 @@ app.post('/batch', [...requireOrg('Org1'), requireCarriedBy], async (req, res) =
     try {
         const { batchId, type, location, dateTime, photo, carriedBy } = req.body;
         const initiatedBy = req.user.email;
-        const result = await invoke('Org1MSP', 'CreateBatch', [batchId, type, location, dateTime, photo || '', initiatedBy, carriedBy]);
+        const result = await invoke('Org1MSP', 'CreateBatch', [batchId, type, location, dateTime, photo || '', initiatedBy, carriedBy], req.user.id);
         res.json({ success: true, data: result });
     } catch (e) {
         res.status(500).json({ success: false, error: e.message });
