@@ -32,6 +32,7 @@ export const addDrying = (id, data) => request('POST', `/batch/${id}/drying`, da
 export const addMixing = (id, data) => request('POST', `/batch/${id}/mixing`, data);
 export const addProduct = (id, data) => request('POST', `/batch/${id}/product`, data);
 export const readBatch = (id) => request('GET', `/batch/${id}`);
+export const getAllBatches = () => request('GET', '/batches');
 
 // ─── Transport ─────────────────────────────────────────────────────────────────
 export const createTransport = (data) => request('POST', '/transport', data);

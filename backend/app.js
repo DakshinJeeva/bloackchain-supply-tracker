@@ -46,6 +46,25 @@ function writeUsers(users) {
     fs.writeFileSync(USERS_PATH, JSON.stringify({ users }, null, 2));
 }
 
+// ─── Batch ID Registry (flat JSON file — no chaincode redeployment needed) ─────
+const BATCHES_REGISTRY_PATH = path.join(__dirname, 'batches-registry.json');
+
+function readBatchRegistry() {
+    try {
+        return JSON.parse(fs.readFileSync(BATCHES_REGISTRY_PATH, 'utf8')).batchIds || [];
+    } catch {
+        return [];
+    }
+}
+
+function saveBatchId(batchId) {
+    const ids = readBatchRegistry();
+    if (!ids.includes(batchId)) {
+        ids.push(batchId);
+        fs.writeFileSync(BATCHES_REGISTRY_PATH, JSON.stringify({ batchIds: ids }, null, 2));
+    }
+}
+
 function findUserByGoogleId(googleId) {
     return readUsers().find(u => u.googleId === googleId) || null;
 }
@@ -302,28 +321,6 @@ function requireOrg(...allowedOrgs) {
     }];
 }
 
-// Email validation helper — any well-formed email is valid (Google OAuth supports
-// institutional domains like @kongu.edu, not just @gmail.com)
-function isValidEmail(email) {
-    return email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-}
-
-function requireCarriedBy(req, res, next) {
-    const { carriedBy } = req.body;
-    if (!isValidEmail(carriedBy)) {
-        return res.status(400).json({
-            success: false,
-            error: 'carriedBy must be a valid email address (e.g. colleague@example.com)',
-        });
-    }
-    if (carriedBy.toLowerCase() === req.user.email.toLowerCase()) {
-        return res.status(400).json({
-            success: false,
-            error: 'carriedBy must be a different user than the transaction initiator',
-        });
-    }
-    next();
-}
 
 
 // ══════════════════════════════════════════════════════════════
@@ -732,45 +729,64 @@ async function query(mspId, fn, args, userId) {
 //  BATCH ROUTES (Org1 only)
 // ══════════════════════════════════════════════════════════════
 
-app.post('/batch', [...requireOrg('Org1'), requireCarriedBy], async (req, res) => {
+app.post('/batch', requireOrg('Org1'), async (req, res) => {
     try {
-        const { batchId, type, location, dateTime, photo, carriedBy } = req.body;
+        const { batchId, type, location, dateTime, photo } = req.body;
         const initiatedBy = req.user.email;
-        const result = await invoke('Org1MSP', 'CreateBatch', [batchId, type, location, dateTime, photo || '', initiatedBy, carriedBy], req.user.id);
+        const result = await invoke('Org1MSP', 'CreateBatch', [batchId, type, location, dateTime, photo || '', initiatedBy], req.user.id);
+        saveBatchId(batchId); // track for /batches listing
         res.json({ success: true, data: result });
     } catch (e) {
         res.status(500).json({ success: false, error: e.message });
     }
 });
 
-app.post('/batch/:id/drying', [...requireOrg('Org1'), requireCarriedBy], async (req, res) => {
+app.post('/batch/:id/drying', requireOrg('Org1'), async (req, res) => {
     try {
-        const { temperature, duration, dateTime, carriedBy } = req.body;
+        const { temperature, duration, dateTime } = req.body;
         const initiatedBy = req.user.email;
-        const result = await invoke('Org1MSP', 'AddDrying', [req.params.id, temperature, duration, dateTime, initiatedBy, carriedBy]);
+        const result = await invoke('Org1MSP', 'AddDrying', [req.params.id, temperature, duration, dateTime, initiatedBy], req.user.id);
         res.json({ success: true, data: result });
     } catch (e) {
         res.status(500).json({ success: false, error: e.message });
     }
 });
 
-app.post('/batch/:id/mixing', [...requireOrg('Org1'), requireCarriedBy], async (req, res) => {
+app.post('/batch/:id/mixing', requireOrg('Org1'), async (req, res) => {
     try {
-        const { temperature, ingredients, dateTime, carriedBy } = req.body;
+        const { temperature, ingredients, dateTime } = req.body;
         const initiatedBy = req.user.email;
-        const result = await invoke('Org1MSP', 'AddMixing', [req.params.id, temperature, ingredients, dateTime, initiatedBy, carriedBy]);
+        const result = await invoke('Org1MSP', 'AddMixing', [req.params.id, temperature, ingredients, dateTime, initiatedBy], req.user.id);
         res.json({ success: true, data: result });
     } catch (e) {
         res.status(500).json({ success: false, error: e.message });
     }
 });
 
-app.post('/batch/:id/product', [...requireOrg('Org1'), requireCarriedBy], async (req, res) => {
+app.post('/batch/:id/product', requireOrg('Org1'), async (req, res) => {
     try {
-        const { photo, dateTime, carriedBy } = req.body;
+        const { photo, dateTime } = req.body;
         const initiatedBy = req.user.email;
-        const result = await invoke('Org1MSP', 'AddProduct', [req.params.id, photo || '', dateTime, initiatedBy, carriedBy]);
+        const result = await invoke('Org1MSP', 'AddProduct', [req.params.id, photo || '', dateTime, initiatedBy], req.user.id);
         res.json({ success: true, data: result });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+app.get('/batches', requireOrg('Org1'), async (req, res) => {
+    try {
+        const ids = readBatchRegistry();
+        const batches = [];
+        for (const id of ids) {
+            try {
+                const batch = await query('Org1MSP', 'ReadBatch', [id], req.user.id);
+                batches.push(batch);
+            } catch {
+                // batch not found on ledger — skip
+            }
+        }
+        res.json({ success: true, data: batches });
     } catch (e) {
         res.status(500).json({ success: false, error: e.message });
     }
@@ -778,7 +794,7 @@ app.post('/batch/:id/product', [...requireOrg('Org1'), requireCarriedBy], async 
 
 app.get('/batch/:id', requireOrg('Org1'), async (req, res) => {
     try {
-        const result = await query('Org1MSP', 'ReadBatch', [req.params.id]);
+        const result = await query('Org1MSP', 'ReadBatch', [req.params.id], req.user.id);
         res.json({ success: true, data: result });
     } catch (e) {
         res.status(500).json({ success: false, error: e.message });
@@ -789,33 +805,33 @@ app.get('/batch/:id', requireOrg('Org1'), async (req, res) => {
 //  TRANSPORT ROUTES (Org2 only)
 // ══════════════════════════════════════════════════════════════
 
-app.post('/transport', [...requireOrg('Org2'), requireCarriedBy], async (req, res) => {
+app.post('/transport', requireOrg('Org2'), async (req, res) => {
     try {
-        const { transportId, batchIds, startTime, location, carriedBy } = req.body;
+        const { transportId, batchIds, startTime, location } = req.body;
         const initiatedBy = req.user.email;
-        const result = await invoke('Org2MSP', 'CreateTransport', [transportId, JSON.stringify(batchIds), startTime, location, initiatedBy, carriedBy]);
+        const result = await invoke('Org2MSP', 'CreateTransport', [transportId, JSON.stringify(batchIds), startTime, location, initiatedBy], req.user.id);
         res.json({ success: true, data: result });
     } catch (e) {
         res.status(500).json({ success: false, error: e.message });
     }
 });
 
-app.post('/transport/:id/track', [...requireOrg('Org2'), requireCarriedBy], async (req, res) => {
+app.post('/transport/:id/track', requireOrg('Org2'), async (req, res) => {
     try {
-        const { temperature, speed, location, batchIds, carriedBy } = req.body;
+        const { temperature, speed, location, batchIds } = req.body;
         const initiatedBy = req.user.email;
-        const result = await invoke('Org2MSP', 'TrackCargo', [req.params.id, temperature, speed, location, JSON.stringify(batchIds), initiatedBy, carriedBy]);
+        const result = await invoke('Org2MSP', 'TrackCargo', [req.params.id, temperature, speed, location, JSON.stringify(batchIds), initiatedBy], req.user.id);
         res.json({ success: true, data: result });
     } catch (e) {
         res.status(500).json({ success: false, error: e.message });
     }
 });
 
-app.post('/transport/:id/complete', [...requireOrg('Org2'), requireCarriedBy], async (req, res) => {
+app.post('/transport/:id/complete', requireOrg('Org2'), async (req, res) => {
     try {
-        const { endLocation, carriedBy } = req.body;
+        const { endLocation } = req.body;
         const initiatedBy = req.user.email;
-        const result = await invoke('Org2MSP', 'CompleteTransport', [req.params.id, endLocation, initiatedBy, carriedBy]);
+        const result = await invoke('Org2MSP', 'CompleteTransport', [req.params.id, endLocation, initiatedBy], req.user.id);
         res.json({ success: true, data: result });
     } catch (e) {
         res.status(500).json({ success: false, error: e.message });

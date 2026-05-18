@@ -33,14 +33,7 @@ export CORE_PEER_MSPCONFIGPATH=$PWD/organizations/peerOrganizations/org3.example
 export CORE_PEER_TLS_ROOTCERT_FILE=$PWD/organizations/peerOrganizations/org3.example.com/peers/peer0.org3.example.com/tls/ca.crt
 export CORE_PEER_TLS_ENABLED=true
 
-# =========================
-# PACKAGE (again for Org3)
-# =========================
-peer lifecycle chaincode package ${CC_NAME}.tar.gz \
-  --path $CC_SRC_PATH \
-  --lang node \
-  --label $CC_LABEL
-
+# Reuse the package that was already installed on Org1/Org2 (same hash required)
 peer lifecycle chaincode install ${CC_NAME}.tar.gz
 
 echo "🔍 Getting Package ID from Org3..."
